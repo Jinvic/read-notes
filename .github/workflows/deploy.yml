@@ -4,11 +4,11 @@ name: Deploy Site
 on:
   workflow_dispatch:
   # 当docs目录或mkdocs配置有变更时自动触发
-  push:
-    paths:
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - '.github/workflows/deploy.yml'
+  # push:
+  #   paths:
+  #     - 'docs/**'
+  #     - 'mkdocs.yml'
+  #     - '.github/workflows/deploy.yml'
 
 jobs:
   deploy:

@@ -4,50 +4,109 @@ name: Convert Notes
 on:
   # 手动触发
   workflow_dispatch:
-  # 或者当src目录有变更时自动触发
+  # 当src目录有变更时自动触发
   push:
     paths:
       - 'src/**'
       - 'scripts/hugo_to_mkdocs.py'
-  # 或者由sync-only工作流触发
-  # repository_dispatch:
+    branches: [ main, master ]
+
+# 并发控制
+concurrency:
+  group: convert-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   convert:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10  # 增加超时时间
     
     steps:
-      - name: 检出代码
+      - name: 记录开始时间
+        run: echo "🕐 转换任务开始: $(date)"
+        
+      - name: 检出代码（使用PAT）
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.PAT_TOKEN }}  # 使用PAT以便推送
           fetch-depth: 0
           
       - name: 设置Python环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip'
           
       - name: 安装依赖
         run: |
           pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install frontmatter
+          pip install frontmatter markdown
           
       - name: 检查src目录
+        id: check-src
         run: |
           echo "📁 检查src目录内容..."
-          if [ ! -d "src" ] || [ -z "$(ls -A src 2>/dev/null)" ]; then
-            echo "❌ src目录为空，没有可转换的内容"
+          
+          if [ ! -d "src" ]; then
+            echo "❌ src目录不存在"
             exit 1
           fi
           
-          echo "找到以下Markdown文件:"
+          # 统计文件
+          MD_COUNT=$(find src -name "*.md" -type f | wc -l)
+          IMAGE_COUNT=$(find src -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" -o -name "*.svg" -o -name "*.webp" -o -name "*.bmp" | wc -l)
+          META_COUNT=$(find src -name "*.meta.json" -type f | wc -l)
+          
+          echo "📊 src目录统计:"
+          echo "  Markdown文件: $MD_COUNT 个"
+          echo "  图片文件: $IMAGE_COUNT 个"
+          echo "  元数据文件: $META_COUNT 个"
+          
+          if [ $MD_COUNT -eq 0 ]; then
+            echo "❌ src目录中没有Markdown文件"
+            exit 1
+          fi
+          
+          # 输出变量
+          echo "md_count=$MD_COUNT" >> $GITHUB_OUTPUT
+          echo "image_count=$IMAGE_COUNT" >> $GITHUB_OUTPUT
+          
+          # 显示文件列表
+          echo ""
+          echo "📄 待转换的Markdown文件:"
           find src -name "*.md" -type f | while read f; do
-            echo "  - $f"
+            size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null || echo "?")
+            name=$(basename "$f")
+            echo "  - $name ($size bytes)"
           done
           
+      - name: 复制图片到docs目录
+        run: |
+          echo "🖼️  复制图片到docs目录..."
+          
+          # 创建图片目录
+          mkdir -p docs/assets/images
+          
+          # 如果src/images存在，复制到docs/assets/images
+          if [ -d "src/images" ]; then
+            echo "复制src/images/到docs/assets/images/"
+            # 使用rsync保持目录结构，允许覆盖
+            if command -v rsync >/dev/null 2>&1; then
+              rsync -av --ignore-existing src/images/ docs/assets/images/
+            else
+              cp -r src/images/* docs/assets/images/ 2>/dev/null || true
+            fi
+            
+            echo "✅ 图片复制完成"
+            echo "docs/assets/images目录内容:"
+            find docs/assets/images -type f | head -10
+          else
+            echo "⚠️  src/images目录不存在，跳过图片复制"
+          fi
+          
       - name: 转换为MkDocs格式
+        id: convert-step
         run: |
           echo "🔄 开始转换格式..."
           
@@ -64,19 +123,36 @@ jobs:
           echo "✅ 格式转换完成"
           
           # 显示转换结果
-          echo "转换结果:"
-          find docs/reading-notes -name "*.md" -type f | head -10
+          echo "📂 转换结果目录结构:"
+          if command -v tree &> /dev/null; then
+            tree docs/reading-notes --dirsfirst -L 3 || echo "tree命令不可用"
+          else
+            find docs/reading-notes -type f | head -20
+          fi
+          
+          # 统计转换结果
+          OUTPUT_COUNT=$(find docs/reading-notes -name "*.md" -type f | wc -l)
+          echo "📄 生成Markdown文件: $OUTPUT_COUNT 个"
+          echo "output_count=$OUTPUT_COUNT" >> $GITHUB_OUTPUT
           
       - name: 生成导航配置
         run: |
           echo "📋 生成导航配置..."
           
-          # 这里可以调用生成导航的脚本
-          # python scripts/generate_nav.py
+          # 临时导航配置
+          cat > docs/reading-notes/README.md << 'EOF'
+          # 读书笔记
+
+          这里是从Hugo同步过来的读书笔记，按书籍分类。
+
+          EOF
           
-          echo "导航配置生成完成"
+          echo "导航占位文件已创建"
           
       - name: 提交转换结果
+        id: commit-step
+        env:
+          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
         run: |
           echo "📝 提交转换结果..."
           
@@ -86,10 +162,56 @@ jobs:
           # 添加docs目录变更
           git add docs/
           
+          # 检查是否有实际变更
           if git diff --cached --quiet; then
             echo "ℹ️  docs目录没有变更，跳过提交"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
           else
-            git commit -m "docs: 更新转换后的笔记 [auto]"
+            # 查看变更内容
+            echo "📋 变更内容预览:"
+            git diff --cached --name-status | head -20
+            
+            # 提交变更
+            git commit -m "docs: 转换笔记格式 [auto]
+            
+              原始Markdown文件: ${{ steps.check-src.outputs.md_count }}
+              生成文件: ${{ steps.convert-step.outputs.output_count }}
+              图片文件: ${{ steps.check-src.outputs.image_count }}"
+            
+            # 配置远程仓库使用PAT
+            git remote set-url origin https://x-access-token:$PAT_TOKEN@github.com/${{ github.repository }}.git
+            
+            # 推送变更
+            echo "🚀 推送变更到远程仓库..."
             git push origin ${{ github.ref_name }}
+            
             echo "✅ 已提交并推送转换结果"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 生成转换报告
+        if: always()
+        run: |
+          echo ""
+          echo "📊 转换任务报告"
+          echo "================"
+          echo "任务状态: ${{ job.status }}"
+          echo "原始文件: ${{ steps.check-src.outputs.md_count }} 个Markdown"
+          echo "原始图片: ${{ steps.check-src.outputs.image_count }} 个"
+          echo "生成文件: ${{ steps.convert-step.outputs.output_count || 0 }} 个"
+          echo "是否提交: ${{ steps.commit-step.outputs.has_changes || 'false' }}"
+          
+          if [[ "${{ job.status }}" == "success" ]]; then
+            if [[ "${{ steps.commit-step.outputs.has_changes }}" == "true" ]]; then
+              echo ""
+              echo "🎉 转换成功并已提交!"
+              echo "转换后的文件在: docs/reading-notes/"
+            else
+              echo ""
+              echo "ℹ️  转换完成，但未检测到变更（可能已经是最新）"
+            fi
+          else
+            echo ""
+            echo "❌ 转换任务失败"
           fi
