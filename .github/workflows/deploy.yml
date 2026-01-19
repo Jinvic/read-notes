@@ -1,0 +1,44 @@
+# .github/workflows/deploy.yml
+name: Deploy Site
+
+on:
+  workflow_dispatch:
+  # 当docs目录或mkdocs配置有变更时自动触发
+  push:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        
+      - name: 设置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: 安装MkDocs和主题
+        run: |
+          pip install mkdocs
+          pip install mkdocs-material  # 如果使用material主题
+          
+      - name: 构建站点
+        run: |
+          echo "🏗️  开始构建MkDocs站点..."
+          mkdocs build --verbose
+          echo "✅ 构建完成"
+          
+      - name: 部署到GitHub Pages
+        if: success()
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true

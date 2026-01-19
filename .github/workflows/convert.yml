@@ -1,0 +1,95 @@
+# .github/workflows/convert.yml
+name: Convert Notes
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  # 或者当src目录有变更时自动触发
+  push:
+    paths:
+      - 'src/**'
+      - 'scripts/hugo_to_mkdocs.py'
+  # 或者由sync-only工作流触发
+  # repository_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: 设置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install frontmatter
+          
+      - name: 检查src目录
+        run: |
+          echo "📁 检查src目录内容..."
+          if [ ! -d "src" ] || [ -z "$(ls -A src 2>/dev/null)" ]; then
+            echo "❌ src目录为空，没有可转换的内容"
+            exit 1
+          fi
+          
+          echo "找到以下Markdown文件:"
+          find src -name "*.md" -type f | while read f; do
+            echo "  - $f"
+          done
+          
+      - name: 转换为MkDocs格式
+        run: |
+          echo "🔄 开始转换格式..."
+          
+          # 确保输出目录存在
+          mkdir -p docs/reading-notes
+          
+          # 运行转换脚本
+          python scripts/hugo_to_mkdocs.py \
+            --src-dir ./src \
+            --output-dir ./docs/reading-notes \
+            --image-base /assets/images \
+            --log-level INFO
+          
+          echo "✅ 格式转换完成"
+          
+          # 显示转换结果
+          echo "转换结果:"
+          find docs/reading-notes -name "*.md" -type f | head -10
+          
+      - name: 生成导航配置
+        run: |
+          echo "📋 生成导航配置..."
+          
+          # 这里可以调用生成导航的脚本
+          # python scripts/generate_nav.py
+          
+          echo "导航配置生成完成"
+          
+      - name: 提交转换结果
+        run: |
+          echo "📝 提交转换结果..."
+          
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # 添加docs目录变更
+          git add docs/
+          
+          if git diff --cached --quiet; then
+            echo "ℹ️  docs目录没有变更，跳过提交"
+          else
+            git commit -m "docs: 更新转换后的笔记 [auto]"
+            git push origin ${{ github.ref_name }}
+            echo "✅ 已提交并推送转换结果"
+          fi

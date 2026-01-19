@@ -1,0 +1,178 @@
+# .github/workflows/sync-only.yml
+name: Sync Only (from Hugo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      hugo_repo:
+        description: 'Hugo仓库名称'
+        required: true
+      hugo_commit:
+        description: 'Hugo提交哈希'
+        required: true
+      sync_reason:
+        description: '同步原因'
+        required: true
+      notes_json:
+        description: '需要同步的笔记配置(JSON)'
+        required: true
+
+# 并发控制
+concurrency:
+  group: sync-only-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-notes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: 记录触发信息
+        run: |
+          echo "🔄 同步任务开始"
+          echo "来源: ${{ github.event.inputs.hugo_repo }}"
+          echo "提交: ${{ github.event.inputs.hugo_commit }}"
+          echo "原因: ${{ github.event.inputs.sync_reason }}"
+          
+      - name: 检出MkDocs仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          
+      - name: 设置Python环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+          
+      - name: 安装Python依赖
+        run: |
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pyyaml frontmatter
+          
+      - name: 解析同步配置
+        id: parse-config
+        run: |
+          # 将输入的JSON保存到文件
+          echo '${{ github.event.inputs.notes_json }}' > sync-notes.json
+          
+          # 统计笔记数量
+          NOTE_COUNT=$(python -c "import json; data=json.load(open('sync-notes.json')); print(len(data))")
+          echo "📚 需要同步 $NOTE_COUNT 篇笔记"
+          
+          # 设置输出变量
+          echo "note_count=$NOTE_COUNT" >> $GITHUB_OUTPUT
+          
+      - name: 从Hugo仓库拉取内容
+        env:
+          HUGO_TOKEN: ${{ secrets.HUGO_TOKEN }}
+        run: |
+          echo "⬇️  正在从Hugo仓库拉取内容..."
+          
+          # 创建临时目录
+          mkdir -p hugo-temp
+          
+          # 克隆Hugo仓库（最小化克隆）
+          git clone \
+            --depth 1 \
+            --no-checkout \
+            --filter=blob:none \
+            "https://x-access-token:$HUGO_TOKEN@github.com/${{ github.event.inputs.hugo_repo }}" \
+            hugo-temp
+          
+          cd hugo-temp
+          
+          # 检出指定提交
+          git checkout ${{ github.event.inputs.hugo_commit }}
+          
+          echo "✅ Hugo仓库内容已拉取"
+          echo "提交哈希: $(git rev-parse HEAD)"
+          
+      - name: 同步笔记和图片到src目录
+        id: sync-step
+        run: |
+          echo "🔄 开始同步笔记和图片..."
+          
+          # 创建必要的目录
+          mkdir -p src
+          
+          # 运行同步脚本（只同步到src目录，不转换）
+          python scripts/sync_from_hugo.py \
+            --hugo-dir ./hugo-temp \
+            --config sync-notes.json \
+            --src-dir ./src \
+            --skip-conversion \
+            --log-level INFO
+          
+          # 检查同步结果
+          if [ -d "src" ] && [ "$(ls -A src 2>/dev/null)" ]; then
+            echo "✅ 同步完成，src目录内容:"
+            find src -type f -name "*.md" | head -10
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  同步完成，但src目录为空"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 提交同步结果
+        if: steps.sync-step.outputs.has_changes == 'true'
+        run: |
+          echo "📝 提交同步结果到Git..."
+          
+          # 配置Git用户
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          
+          # 添加所有变更
+          git add src/
+          
+          # 检查是否有实际变更
+          if git diff --cached --quiet; then
+            echo "ℹ️  没有实际变更，跳过提交"
+            echo "has_actual_changes=false" >> $GITHUB_OUTPUT
+          else
+            # 提交变更
+            git commit -m "sync: 从Hugo同步笔记 [${{ github.event.inputs.hugo_commit }}]
+            
+            来源: ${{ github.event.inputs.hugo_repo }}
+            原因: ${{ github.event.inputs.sync_reason }}
+            笔记数: ${{ steps.parse-config.outputs.note_count }}"
+            
+            # 推送变更
+            git push origin ${{ github.ref_name }}
+            
+            echo "✅ 已提交并推送同步结果"
+            echo "has_actual_changes=true" >> $GITHUB_OUTPUT
+            echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 清理临时文件
+        if: always()
+        run: |
+          echo "🧹 清理临时文件..."
+          rm -rf hugo-temp sync-notes.json
+          
+      - name: 生成同步报告
+        if: always()
+        run: |
+          echo "📊 同步任务报告"
+          echo "================"
+          echo "任务状态: ${{ job.status }}"
+          echo "触发来源: ${{ github.event.inputs.hugo_repo }}"
+          echo "同步原因: ${{ github.event.inputs.sync_reason }}"
+          echo "笔记数量: ${{ steps.parse-config.outputs.note_count }}"
+          echo "同步变更: ${{ steps.sync-step.outputs.has_changes || 'false' }}"
+          echo "实际提交: ${{ steps.sync-step.outputs.has_actual_changes || 'false' }}"
+          if [[ "${{ steps.sync-step.outputs.commit_hash }}" != "" ]]; then
+            echo "提交哈希: ${{ steps.sync-step.outputs.commit_hash }}"
+          fi
+          
+      - name: 触发转换工作流（可选）
+        if: steps.sync-step.outputs.has_actual_changes == 'true'
+        run: |
+          echo "🚀 同步完成，准备触发转换工作流..."
+          # 这里可以添加触发convert.yml工作流的代码
+          # 或者等手动触发
