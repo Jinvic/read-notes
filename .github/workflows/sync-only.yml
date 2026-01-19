@@ -78,8 +78,6 @@ jobs:
           # 克隆Hugo仓库（最小化克隆）
           git clone \
             --depth 1 \
-            --no-checkout \
-            --filter=blob:none \
             "https://x-access-token:$HUGO_TOKEN@github.com/${{ github.event.inputs.hugo_repo }}" \
             hugo-temp
           
@@ -104,16 +102,60 @@ jobs:
             --hugo-dir ./hugo-temp \
             --config sync-notes.json \
             --src-dir ./src \
-            --skip-conversion \
             --log-level INFO
           
           # 检查同步结果
-          if [ -d "src" ] && [ "$(ls -A src 2>/dev/null)" ]; then
-            echo "✅ 同步完成，src目录内容:"
-            find src -type f -name "*.md" | head -10
-            echo "has_changes=true" >> $GITHUB_OUTPUT
+          if [ -d "src" ]; then
+            echo "✅ src目录已创建"
+            
+            # 统计文件数量
+            MD_FILES=$(find src -name "*.md" -type f | wc -l)
+            IMAGE_FILES=$(find src -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" -o -name "*.svg" -o -name "*.webp" -o -name "*.bmp" | wc -l)
+            JSON_FILES=$(find src -name "*.json" -type f | wc -l)
+            
+            echo "📄 Markdown文件: $MD_FILES 个"
+            echo "🖼️  图片文件: $IMAGE_FILES 个"
+            echo "📋 JSON文件: $JSON_FILES 个"
+            
+            if [ $MD_FILES -gt 0 ]; then
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "md_count=$MD_FILES" >> $GITHUB_OUTPUT
+              echo "image_count=$IMAGE_FILES" >> $GITHUB_OUTPUT
+              
+              # 显示文件结构
+              echo ""
+              echo "📂 文件结构预览:"
+              if command -v tree &> /dev/null; then
+                tree src --dirsfirst -L 3 || echo "tree命令不可用"
+              else
+                find src -type f | head -20
+              fi
+              
+              # 显示具体文件
+              echo ""
+              echo "📄 Markdown文件列表:"
+              find src -name "*.md" -type f | while read f; do
+                size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null || echo "?")
+                echo "  - $f ($size bytes)"
+              done
+              
+              if [ $IMAGE_FILES -gt 0 ]; then
+                echo ""
+                echo "🖼️  图片文件列表:"
+                find src -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" -o -name "*.svg" -o -name "*.webp" -o -name "*.bmp" | head -10 | while read f; do
+                  size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f" 2>/dev/null || echo "?")
+                  echo "  - $f ($size bytes)"
+                done
+                if [ $IMAGE_FILES -gt 10 ]; then
+                  echo "  ... 还有 $((IMAGE_FILES - 10)) 个图片"
+                fi
+              fi
+            else
+              echo "❌ src目录中没有Markdown文件"
+              echo "has_changes=false" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "⚠️  同步完成，但src目录为空"
+            echo "❌ src目录未创建"
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
           
@@ -139,7 +181,8 @@ jobs:
             
             来源: ${{ github.event.inputs.hugo_repo }}
             原因: ${{ github.event.inputs.sync_reason }}
-            笔记数: ${{ steps.parse-config.outputs.note_count }}"
+            笔记数: ${{ steps.parse-config.outputs.note_count }}
+            图片数: ${{ steps.sync-step.outputs.image_count || 0 }}"
             
             # 推送变更
             git push origin ${{ github.ref_name }}
@@ -154,20 +197,43 @@ jobs:
         run: |
           echo "🧹 清理临时文件..."
           rm -rf hugo-temp sync-notes.json
+          # 如果有同步报告也清理
+          if [ -f "sync-report.json" ]; then
+            rm -f sync-report.json
+          fi
           
-      - name: 生成同步报告
+      - name: 生成最终报告
         if: always()
         run: |
-          echo "📊 同步任务报告"
-          echo "================"
+          echo ""
+          echo "📊 同步任务最终报告"
+          echo "===================="
           echo "任务状态: ${{ job.status }}"
           echo "触发来源: ${{ github.event.inputs.hugo_repo }}"
           echo "同步原因: ${{ github.event.inputs.sync_reason }}"
-          echo "笔记数量: ${{ steps.parse-config.outputs.note_count }}"
-          echo "同步变更: ${{ steps.sync-step.outputs.has_changes || 'false' }}"
+          echo "配置笔记数: ${{ steps.parse-config.outputs.note_count }}"
+          echo "检测到变更: ${{ steps.sync-step.outputs.has_changes || 'false' }}"
+          echo "Markdown文件: ${{ steps.sync-step.outputs.md_count || 0 }}"
+          echo "图片文件: ${{ steps.sync-step.outputs.image_count || 0 }}"
           echo "实际提交: ${{ steps.sync-step.outputs.has_actual_changes || 'false' }}"
-          if [[ "${{ steps.sync-step.outputs.commit_hash }}" != "" ]]; then
-            echo "提交哈希: ${{ steps.sync-step.outputs.commit_hash }}"
+          
+          if [[ "${{ job.status }}" == "success" ]]; then
+            if [[ "${{ steps.sync-step.outputs.has_changes }}" == "true" ]]; then
+              echo ""
+              echo "🎉 同步成功完成!"
+              if [[ "${{ steps.sync-step.outputs.has_actual_changes }}" == "true" ]]; then
+                echo "✅ 文件已提交到Git仓库"
+              else
+                echo "ℹ️  文件已同步但未提交（可能无实际变更）"
+              fi
+            else
+              echo ""
+              echo "ℹ️  同步完成，但未检测到变更"
+            fi
+          else
+            echo ""
+            echo "❌ 同步任务失败"
+            echo "请检查上面的错误日志"
           fi
           
       - name: 触发转换工作流（可选）
