@@ -38,7 +38,7 @@ jobs:
       - name: 检出MkDocs仓库
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.HUGO_TOKEN }}
           fetch-depth: 0
           
       - name: 设置Python环境
