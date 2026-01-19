@@ -1,0 +1,50 @@
+site_name: Read Notes
+site_url: https://doc.jinvic.top/read
+repo_url: https://github.com/Jinvic/read
+repo_name: Jinvic/read-notes
+site_description: read notes of some books.
+site_author: Jinvic
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.instant.progress
+    # - navigation.tabs
+    # - navigation.tabs.sticky
+    # - navigation.expand
+    - navigation.path
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - search.share
+  palette: 
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+nav:
+  - Home: 'index.md'
+
+plugins:
+  - search:
+      lang:
+        - zh
+        - en
+        - jp
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true  # 可选：启用更紧凑样式
+
