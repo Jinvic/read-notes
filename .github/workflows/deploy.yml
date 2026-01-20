@@ -101,13 +101,9 @@ jobs:
       - name: 复制README到docs目录
         run: |
           echo "📄 复制README..."
-          
-          if [ -f "README.md" ]; then
-            python scripts/copy_readme.py
-            echo "✅ README已复制"
-          else
-            echo "⚠️  README.md不存在"
-          fi
+
+          python scripts/copy_readme.py
+          echo "✅ README已复制"
           
       - name: 构建静态网站
         run: |
