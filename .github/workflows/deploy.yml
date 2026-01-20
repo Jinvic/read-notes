@@ -24,7 +24,8 @@ jobs:
     
     steps:
       - name: 记录开始时间
-        run: echo "🕐 部署任务开始: $(date)"
+        run: |
+          echo "🕐 部署任务开始: $(date)"
         
       - name: 检出代码
         uses: actions/checkout@v4
@@ -32,7 +33,7 @@ jobs:
           fetch-depth: 0
           
       - name: 设置Python环境
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
           python-version: '3.10'
           cache: 'pip'
@@ -180,8 +181,6 @@ jobs:
           echo "任务状态: ${{ job.status }}"
           echo "触发提交: ${{ github.sha }}"
           echo "源文件数: ${{ steps.check-src.outputs.md_count || 0 }}"
-          echo "开始时间: ${{ steps.start-time.outputs.timestamp || '未知' }}"
-          echo "结束时间: $(date)"
           
           if [[ "${{ job.status }}" == "success" ]]; then
             echo ""
