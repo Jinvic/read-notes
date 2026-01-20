@@ -43,7 +43,7 @@ def sanitize_for_filename(text: str) -> str:
     # 限制长度
     if len(text) > 50:
         text = text[:50]
-    return text.lower()
+    return text
 
 def remove_frontmatter(content: str) -> str:
     """移除Front Matter，只保留正文"""
@@ -142,17 +142,17 @@ def convert_image_links(content: str, note_clean_name: str, image_base: str) -> 
     
     # 模式1: ![alt](/post-images/笔记名/图片名.扩展名)
     pattern1 = rf'!\[(.*?)\]\(\s*/post-images/[^/]+/([^)\s]+{image_extensions})\s*\)'
-    replacement1 = rf'![\1](..{image_base}/{note_clean_name}/\2)'
+    replacement1 = rf'![\1]({image_base}/{note_clean_name}/\2)'
     content = re.sub(pattern1, replacement1, content, flags=re.IGNORECASE)
     
     # 模式2: ![alt](../static/post-images/笔记名/图片名.扩展名)
     pattern2 = rf'!\[(.*?)\]\(\s*(\.\./)*static/post-images/[^/]+/([^)\s]+{image_extensions})\s*\)'
-    replacement2 = rf'![\1](..{image_base}/{note_clean_name}/\3)'
+    replacement2 = rf'![\1]({image_base}/{note_clean_name}/\3)'
     content = re.sub(pattern2, replacement2, content, flags=re.IGNORECASE)
     
     # 模式3: 处理已经在本地的图片（src/images/...）
     pattern3 = rf'!\[(.*?)\]\(\s*\.?/?images/[^/]+/([^)\s]+{image_extensions})\s*\)'
-    replacement3 = rf'![\1](..{image_base}/{note_clean_name}/\2)'
+    replacement3 = rf'![\1]({image_base}/{note_clean_name}/\2)'
     content = re.sub(pattern3, replacement3, content, flags=re.IGNORECASE)
     
     # 模式4: 处理常见的Hugo图片路径
@@ -161,7 +161,7 @@ def convert_image_links(content: str, note_clean_name: str, image_base: str) -> 
         alt = match.group(1)
         img_path = match.group(2)
         img_name = os.path.basename(img_path)
-        return f'![{alt}](..{image_base}/{note_clean_name}/{img_name})'
+        return f'![{alt}]({image_base}/{note_clean_name}/{img_name})'
     
     content = re.sub(pattern4, replace_func4, content, flags=re.IGNORECASE)
     
@@ -285,7 +285,7 @@ def convert_single_note(src_md_file: Path, output_base_dir: Path,
 @click.command()
 @click.option('--src-dir', default='./src', help='源文件目录（Hugo格式）')
 @click.option('--output-dir', default='./docs/reading-notes', help='输出目录（MkDocs格式）')
-@click.option('--image-base', default='/assets/images', help='图片基础路径')
+@click.option('--image-base', default='../assets/images', help='图片基础路径')
 @click.option('--log-level', default='INFO', help='日志级别')
 def main(src_dir: str, output_dir: str, image_base: str, log_level: str):
     """主函数：转换Hugo笔记为MkDocs格式"""

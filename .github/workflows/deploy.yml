@@ -3,42 +3,192 @@ name: Deploy Site
 
 on:
   workflow_dispatch:
-  # 当docs目录或mkdocs配置有变更时自动触发
-  # push:
-  #   paths:
-  #     - 'docs/**'
-  #     - 'mkdocs.yml'
-  #     - '.github/workflows/deploy.yml'
+  # 当src目录或相关文件变更时触发
+  push:
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'mkdocs.yml'
+      - 'README.md'
+    branches: [ main, master ]
+
+# 并发控制
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
     steps:
+      - name: 记录开始时间
+        run: echo "🕐 部署任务开始: $(date)"
+        
       - name: 检出代码
         uses: actions/checkout@v4
-        
+        with:
+          fetch-depth: 0
+          
       - name: 设置Python环境
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
+          cache: 'pip'
           
-      - name: 安装MkDocs和主题
+      - name: 安装Python依赖
         run: |
-          pip install mkdocs
-          pip install mkdocs-material  # 如果使用material主题
+          pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install mkdocs mkdocs-material
           
-      - name: 构建站点
+      - name: 检查src目录
+        id: check-src
         run: |
-          echo "🏗️  开始构建MkDocs站点..."
-          mkdocs build --verbose
+          echo "📁 检查src目录..."
+          
+          if [ ! -d "src" ]; then
+            echo "❌ src目录不存在"
+            exit 1
+          fi
+          
+          MD_COUNT=$(find src -name "*.md" -type f | wc -l)
+          if [ $MD_COUNT -eq 0 ]; then
+            echo "⚠️  src目录中没有Markdown文件"
+          else
+            echo "✅ src目录中有 $MD_COUNT 个Markdown文件"
+            echo "md_count=$MD_COUNT" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: 创建docs目录结构
+        run: |
+          echo "📁 创建docs目录结构..."
+          
+          # 清理旧的docs目录（如果存在）
+          rm -rf docs
+          mkdir -p docs
+          
+          # 创建必要的子目录
+          mkdir -p docs/reading-notes
+          mkdir -p docs/assets/images
+          
+      - name: 转换Hugo格式为MkDocs格式
+        if: steps.check-src.outputs.md_count != '0'
+        run: |
+          echo "🔄 转换笔记格式..."
+          
+          python scripts/hugo_to_mkdocs.py \
+            --src-dir ./src \
+            --output-dir ./docs/reading-notes \
+            --image-base ../assets/images \
+            --log-level INFO
+          
+          echo "✅ 笔记转换完成"
+          
+      - name: 复制图片到docs目录
+        run: |
+          echo "🖼️  复制图片..."
+          
+          if [ -d "src/images" ]; then
+            echo "从src/images/复制到docs/assets/images/"
+            cp -r src/images/* docs/assets/images/ 2>/dev/null || true
+            IMAGE_COUNT=$(find docs/assets/images -type f | wc -l)
+            echo "✅ 复制了 $IMAGE_COUNT 个图片文件"
+          else
+            echo "⚠️  src/images目录不存在，跳过图片复制"
+          fi
+          
+      - name: 复制README到docs目录
+        run: |
+          echo "📄 复制README..."
+          
+          if [ -f "README.md" ]; then
+            cp README.md docs/
+            echo "✅ README已复制"
+          else
+            echo "⚠️  README.md不存在"
+          fi
+          
+      - name: 验证docs目录结构
+        run: |
+          echo "📂 验证docs目录结构..."
+          echo "当前目录结构:"
+          find docs -type f | head -20
+          
+          # 检查必要的文件
+          if [ -f "docs/index.md" ]; then
+            echo "✅ 首页存在: docs/index.md"
+          else
+            echo "❌ 首页不存在"
+          fi
+          
+          if [ -f "mkdocs.yml" ]; then
+            echo "✅ 配置文件存在: mkdocs.yml"
+          else
+            echo "❌ 配置文件不存在"
+            exit 1
+          fi
+          
+      - name: 构建静态网站
+        run: |
+          echo "🏗️  构建MkDocs站点..."
+          mkdocs build --verbose --strict
           echo "✅ 构建完成"
           
-      - name: 部署到GitHub Pages
-        if: success()
-        uses: peaceiris/actions-gh-pages@v3
+          # 检查构建结果
+          if [ -d "site" ]; then
+            SITE_SIZE=$(du -sh site | cut -f1)
+            echo "站点大小: $SITE_SIZE"
+            echo "站点内容:"
+            find site -type f | head -10
+          else
+            echo "❌ 构建失败，site目录不存在"
+            exit 1
+          fi
+          
+      - name: 部署到服务器
+        uses: easingthemes/ssh-deploy@v5.1.0
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./site
-          publish_branch: gh-pages
-          force_orphan: true
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          ARGS: "-rlgoDzvc --delete"
+          SOURCE: ./site/
+          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          TARGET: ${{ secrets.REMOTE_TARGET }}
+          SCRIPT_BEFORE: |
+            echo "🔧 开始部署..."
+            echo "时间: $(date)"
+            echo "来源提交: ${{ github.sha }}"
+          SCRIPT_AFTER: |
+            echo "✅ 部署完成"
+            echo "时间: $(date)"
+            echo "部署完成: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            
+      - name: 清理临时文件
+        if: always()
+        run: |
+          echo "🧹 清理临时文件..."
+          rm -rf docs site
+          
+      - name: 生成部署报告
+        if: always()
+        run: |
+          echo ""
+          echo "📊 部署任务报告"
+          echo "================"
+          echo "任务状态: ${{ job.status }}"
+          echo "触发提交: ${{ github.sha }}"
+          echo "源文件数: ${{ steps.check-src.outputs.md_count || 0 }}"
+          echo "开始时间: ${{ steps.start-time.outputs.timestamp || '未知' }}"
+          echo "结束时间: $(date)"
+          
+          if [[ "${{ job.status }}" == "success" ]]; then
+            echo ""
+            echo "🎉 部署成功!"
+            echo "网站已更新到最新内容"
+          else
+            echo ""
+            echo "❌ 部署失败"
+            echo "请检查上面的错误日志"
+          fi
