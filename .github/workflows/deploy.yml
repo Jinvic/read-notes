@@ -9,7 +9,7 @@ on:
       - 'src/**'
       - 'scripts/**'
       - 'mkdocs.yml'
-      - 'README.md'
+      - 'readme.md'
     branches: [ main, master ]
 
 # 并发控制

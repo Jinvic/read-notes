@@ -8,8 +8,8 @@ from pathlib import Path
 
 def main():
     # 源文件和目标文件路径
-    src = Path("README.md")
-    dst = Path("docs/README.md")
+    src = Path("readme.md")
+    dst = Path("docs/index.md")
     
     # 检查源文件是否存在
     if not src.exists():
