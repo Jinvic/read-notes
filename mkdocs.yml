@@ -35,10 +35,10 @@ nav:
   - 首页: index.md
   - tech:
     - go:
-      - Go程序设计语言: tech/go/《Go程序设计语言》阅读笔记/index.md
-      - Go语言高级编程:  tech/go/《Go语言高级编程》阅读笔记/index.md
+      - Go程序设计语言: 《Go程序设计语言》阅读笔记/index.md
+      - Go语言高级编程:  《Go语言高级编程》阅读笔记/index.md
     - cpp:
-      - CppPrimerPlus:  tech/cpp/【学习笔记】C++-Primer-Plus（第6版）【基础篇】/index.md
+      - CppPrimerPlus:  【学习笔记】C++-Primer-Plus（第6版）【基础篇】/index.md
 
 
 
