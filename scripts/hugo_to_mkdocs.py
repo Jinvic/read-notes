@@ -284,7 +284,7 @@ def convert_single_note(src_md_file: Path, output_base_dir: Path,
 
 @click.command()
 @click.option('--src-dir', default='./src', help='源文件目录（Hugo格式）')
-@click.option('--output-dir', default='./docs/reading-notes', help='输出目录（MkDocs格式）')
+@click.option('--output-dir', default='./docs', help='输出目录（MkDocs格式）')
 @click.option('--image-base', default='../assets/images', help='图片基础路径')
 @click.option('--log-level', default='INFO', help='日志级别')
 def main(src_dir: str, output_dir: str, image_base: str, log_level: str):

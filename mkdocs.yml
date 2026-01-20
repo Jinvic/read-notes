@@ -32,7 +32,7 @@ theme:
         name: Switch to light mode
 
 nav:
-  - 首页: REEAME.md
+  - 首页: README.md
   - Go语言高级编程: Go语言高级编程阅读笔记/index.md
 
 plugins:

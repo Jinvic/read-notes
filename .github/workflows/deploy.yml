@@ -71,7 +71,7 @@ jobs:
           mkdir -p docs
           
           # 创建必要的子目录
-          mkdir -p docs/reading-notes
+          mkdir -p docs
           mkdir -p docs/assets/images
           
       - name: 转换Hugo格式为MkDocs格式
@@ -81,7 +81,7 @@ jobs:
           
           python scripts/hugo_to_mkdocs.py \
             --src-dir ./src \
-            --output-dir ./docs/reading-notes \
+            --output-dir ./docs \
             --image-base ../assets/images \
             --log-level INFO
           
