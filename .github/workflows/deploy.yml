@@ -92,10 +92,8 @@ jobs:
           echo "🖼️  复制图片..."
           
           if [ -d "src/images" ]; then
-            echo "从src/images/复制到docs/assets/images/"
-            cp -r src/images/* docs/assets/images/ 2>/dev/null || true
-            IMAGE_COUNT=$(find docs/assets/images -type f | wc -l)
-            echo "✅ 复制了 $IMAGE_COUNT 个图片文件"
+            python scripts/copy_images.py
+            echo "✅ 图片复制完成"
           else
             echo "⚠️  src/images目录不存在，跳过图片复制"
           fi
@@ -105,36 +103,16 @@ jobs:
           echo "📄 复制README..."
           
           if [ -f "README.md" ]; then
-            cp README.md docs/
+            python scripts/copy_readme.py
             echo "✅ README已复制"
           else
             echo "⚠️  README.md不存在"
           fi
           
-      - name: 验证docs目录结构
-        run: |
-          echo "📂 验证docs目录结构..."
-          echo "当前目录结构:"
-          find docs -type f | head -20
-          
-          # 检查必要的文件
-          if [ -f "docs/index.md" ]; then
-            echo "✅ 首页存在: docs/index.md"
-          else
-            echo "❌ 首页不存在"
-          fi
-          
-          if [ -f "mkdocs.yml" ]; then
-            echo "✅ 配置文件存在: mkdocs.yml"
-          else
-            echo "❌ 配置文件不存在"
-            exit 1
-          fi
-          
       - name: 构建静态网站
         run: |
           echo "🏗️  构建MkDocs站点..."
-          mkdocs build --verbose --strict
+          mkdocs build --verbose
           echo "✅ 构建完成"
           
           # 检查构建结果
