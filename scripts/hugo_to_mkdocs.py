@@ -338,8 +338,9 @@ def main(src_dir: str, output_dir: str, image_base: str, log_level: str):
                 note_clean_name = metadata['target_dir']
             else:
                 # 从文件名生成clean name
-                note_name = md_file.stem
-                note_clean_name = sanitize_for_filename(note_name)
+                # note_name = md_file.stem
+                # note_clean_name = sanitize_for_filename(note_name)
+                note_clean_name = note_name
             
             logger.debug(f"笔记clean name: {note_clean_name}")
             

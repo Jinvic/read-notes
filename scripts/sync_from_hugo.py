@@ -50,10 +50,10 @@ def copy_images_to_src(img_source: Path, dst_base_dir: Path, note_name: str) -> 
         return 0
     
     # 清理笔记名称用于目录名
-    clean_note_name = sanitize_filename(note_name)
+    # clean_note_name = sanitize_filename(note_name)
     
-    # 目标目录：src/images/{clean_note_name}/
-    target_dir = dst_base_dir / "images" / clean_note_name
+    # 目标目录：src/images/{note_name}/
+    target_dir = dst_base_dir / "images" / note_name
     target_dir.mkdir(parents=True, exist_ok=True)
     
     # 支持的图片格式
